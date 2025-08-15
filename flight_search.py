@@ -25,12 +25,12 @@ EMAIL_PASS = os.getenv("EMAIL_PASS")
 SEND_TO = os.getenv("EMAIL_RECEIVER")
 
 # --- Configurable Parameters ---
-ORIGIN = "NYC"             # city or airport code
-DESTINATION = "LON"        # city or airport code
+ORIGIN = "TLV"             # city or airport code
+DESTINATION = "MUC"        # city or airport code
 DEPARTURE_DATE = "2025-09-01"
 RETURN_DATE = "2025-09-10"
-ALLOW_NEXT_DAY = True
-MAX_RESULTS = 10
+ALLOW_NEXT_DAY = False
+MAX_RESULTS = 5
 
 # --- Setup Amadeus Client ---
 amadeus = Client(client_id=AMADEUS_API_KEY, client_secret=AMADEUS_API_SECRET)
