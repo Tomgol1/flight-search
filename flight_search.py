@@ -25,12 +25,12 @@ EMAIL_PASS = os.getenv("EMAIL_PASS")
 SEND_TO = os.getenv("EMAIL_RECEIVER")
 
 # --- Configurable Parameters ---
-ORIGIN = "TLV"             # city or airport code
-DESTINATION = "MUC"        # city or airport code
+ORIGIN = "NYC"             # city or airport code
+DESTINATION = "LON"        # city or airport code
 DEPARTURE_DATE = "2025-09-01"
 RETURN_DATE = "2025-09-10"
-ALLOW_NEXT_DAY = False
-MAX_RESULTS = 5
+ALLOW_NEXT_DAY = True
+MAX_RESULTS = 10
 
 # --- Setup Amadeus Client ---
 amadeus = Client(client_id=AMADEUS_API_KEY, client_secret=AMADEUS_API_SECRET)
@@ -40,7 +40,6 @@ client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
 # --- Helper Functions ---
 def search_flights(origin, destination, departure_date, return_date, max_results=5):
-    """Search flights using Amadeus Flight Offers Search API."""
     try:
         response = amadeus.shopping.flight_offers_search.get(
             originLocationCode=origin,
@@ -58,7 +57,6 @@ def search_flights(origin, destination, departure_date, return_date, max_results
         return []
 
 def summarize_with_ai(flights):
-    """Generate an AI summary of flight options using GPT-3.5-turbo."""
     if not flights:
         return "No flights found."
 
@@ -83,7 +81,7 @@ def summarize_with_ai(flights):
         logging.info("AI summary generated successfully")
         return summary
 
-    except openai.error.RateLimitError:
+    except openai.RateLimitError:
         logging.warning("OpenAI quota exceeded or rate limited, skipping AI summary.")
         return "AI summary unavailable due to OpenAI quota limits."
     except Exception as e:
@@ -91,7 +89,6 @@ def summarize_with_ai(flights):
         return "AI summary failed."
 
 def send_email(subject, body, recipient):
-    """Send email with results."""
     try:
         msg = MIMEText(body)
         msg["Subject"] = subject
@@ -107,7 +104,6 @@ def send_email(subject, body, recipient):
         logging.error(f"Email sending failed: {e}")
 
 def build_search_link(origin, destination, departure_date, return_date):
-    """Return a clickable Kayak search link for the given flight."""
     return f"https://www.kayak.com/flights/{origin}-{destination}/{departure_date}/{return_date}?sort=bestflight_a"
 
 # --- Main Job ---
