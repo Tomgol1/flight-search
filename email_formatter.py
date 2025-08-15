@@ -1,7 +1,9 @@
 from datetime import datetime
-from flight_search import ORIGIN, DESTINATION, build_search_link  # import build_search_link if needed
 
-def build_email_body(flights, departure_dates, return_dates, summary):
+def build_search_link(origin, destination, departure_date, return_date):
+    return f"https://www.kayak.com/flights/{origin}-{destination}/{departure_date}/{return_date}?sort=bestflight_a"
+
+def build_email_body(flights, departure_dates, return_dates, summary, origin, destination):
     html = """
     <html>
     <head>
@@ -63,7 +65,7 @@ def build_email_body(flights, departure_dates, return_dates, summary):
     html += "<tr><td colspan='7'><b>Flight Search Links:</b><br>"
     for dep in departure_dates:
         for ret in return_dates:
-            link = build_search_link(ORIGIN, DESTINATION, dep, ret)
+            link = build_search_link(origin, destination, dep, ret)
             html += f'<a href="{link}">{dep} → {ret}</a><br>'
     html += "</td></tr>"
 
