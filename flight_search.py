@@ -8,7 +8,7 @@ import openai
 from config import ORIGIN, DESTINATION, DEPARTURE_DATE, RETURN_DATE, ALLOW_NEXT_DAY, MAX_RESULTS
 from email_formatter import build_email_body
 
-# --- Setup Logging ---
+# --- Logging ---
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -18,7 +18,7 @@ logging.basicConfig(
     ]
 )
 
-# --- Load Environment Variables ---
+# --- Environment Variables ---
 AMADEUS_API_KEY = os.getenv("AMADEUS_API_KEY")
 AMADEUS_API_SECRET = os.getenv("AMADEUS_API_SECRET")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -28,7 +28,7 @@ SEND_TO = os.getenv("EMAIL_RECEIVER")
 if not SEND_TO:
     raise ValueError("EMAIL_RECEIVER environment variable not set")
 
-# --- Setup Clients ---
+# --- Clients ---
 amadeus = Client(client_id=AMADEUS_API_KEY, client_secret=AMADEUS_API_SECRET)
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
@@ -97,9 +97,6 @@ def send_email(subject, html_body, recipient):
     except Exception as e:
         logging.error(f"Email sending failed: {e}")
 
-def build_search_link(origin, destination, departure_date, return_date):
-    return f"https://www.kayak.com/flights/{origin}-{destination}/{departure_date}/{return_date}?sort=bestflight_a"
-
 # --- Main Job ---
 def run_job():
     try:
@@ -122,7 +119,7 @@ def run_job():
             return
 
         summary = summarize_with_ai(all_flights)
-        html_body = build_email_body(all_flights, departure_dates, return_dates, summary)
+        html_body = build_email_body(all_flights, departure_dates, return_dates, summary, ORIGIN, DESTINATION)
         send_email("Flight Search Results", html_body, SEND_TO)
 
     except Exception as e:
