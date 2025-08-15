@@ -1,10 +1,11 @@
 import os
 import logging
 import smtplib
-import openai
+import requests
+from datetime import datetime, timedelta
 from email.mime.text import MIMEText
 from amadeus import Client, ResponseError
-from datetime import datetime, timedelta
+import openai
 
 # --- Setup Logging ---
 logging.basicConfig(
@@ -25,20 +26,22 @@ EMAIL_PASS = os.getenv("EMAIL_PASS")
 SEND_TO = os.getenv("EMAIL_RECEIVER")
 
 # --- Configurable Parameters ---
-ORIGIN = "NYC"
-DESTINATION = "LON"
+ORIGIN = "NYC"             # city or airport code
+DESTINATION = "LON"        # city or airport code
 DEPARTURE_DATE = "2025-09-01"
 RETURN_DATE = "2025-09-10"
 ALLOW_NEXT_DAY = True
 MAX_RESULTS = 10
 
-# --- Setup Clients ---
+# --- Setup Amadeus Client ---
 amadeus = Client(client_id=AMADEUS_API_KEY, client_secret=AMADEUS_API_SECRET)
-openai.api_key = OPENAI_API_KEY
+
+# --- Setup OpenAI Client (1.0+ interface) ---
+client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
 # --- Helper Functions ---
 def search_flights(origin, destination, departure_date, return_date, max_results=5):
-    """Search flights using Amadeus API."""
+    """Search flights using Amadeus Flight Offers Search API."""
     try:
         response = amadeus.shopping.flight_offers_search.get(
             originLocationCode=origin,
@@ -46,17 +49,17 @@ def search_flights(origin, destination, departure_date, return_date, max_results
             departureDate=departure_date,
             returnDate=return_date,
             adults=1,
-            max=max_results,
-            currencyCode="USD"
+            max=max_results
         )
-        logging.info(f"Found {len(response.data)} flights for {departure_date} → {return_date}")
-        return response.data
+        flights = response.data
+        logging.info(f"Found {len(flights)} flights for {departure_date} → {return_date}")
+        return flights
     except ResponseError as e:
         logging.error(f"Amadeus API error: {e}")
         return []
 
 def summarize_with_ai(flights):
-    """Generate an AI summary of flight options."""
+    """Generate an AI summary of flight options using OpenAI 1.0+ interface."""
     if not flights:
         return "No flights found."
 
@@ -64,19 +67,19 @@ def summarize_with_ai(flights):
         flight_descriptions = []
         for f in flights:
             price = f["price"]["total"]
-            carrier = f["itineraries"][0]["segments"][0]["carrierCode"]
             dep = f["itineraries"][0]["segments"][0]["departure"]["iataCode"]
             arr = f["itineraries"][0]["segments"][-1]["arrival"]["iataCode"]
+            carrier = f["itineraries"][0]["segments"][0]["carrierCode"]
             flight_descriptions.append(f"{carrier} {dep}->{arr}, ${price}")
 
         prompt = "Summarize these flight options in a helpful way:\n" + "\n".join(flight_descriptions)
 
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=300
         )
-        summary = response.choices[0].message["content"]
+        summary = response.choices[0].message.content
         logging.info("AI summary generated successfully")
         return summary
     except Exception as e:
@@ -132,10 +135,10 @@ def run_job():
         body = "Flight Search Results:\n\n"
         for f in all_flights:
             price = f["price"]["total"]
+            dep = f["itineraries"][0]["segments"][0]["departure"]["iataCode"]
+            arr = f["itineraries"][0]["segments"][-1]["arrival"]["iataCode"]
             carrier = f["itineraries"][0]["segments"][0]["carrierCode"]
-            dep_code = f["itineraries"][0]["segments"][0]["departure"]["iataCode"]
-            arr_code = f["itineraries"][0]["segments"][-1]["arrival"]["iataCode"]
-            body += f"{carrier} {dep_code}->{arr_code}, ${price}\n"
+            body += f"{carrier} {dep}->{arr}, ${price}\n"
 
         body += "\nFlight Search Links:\n"
         for dep in departure_dates:
