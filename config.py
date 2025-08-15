@@ -2,8 +2,8 @@
 
 # Flight search settings
 ORIGIN = "TLV"             # city or airport code
-DESTINATION = "LON"        # city or airport code
-DEPARTURE_DATE = "2025-09-01"
-RETURN_DATE = "2025-09-10"
-ALLOW_NEXT_DAY = False
-MAX_RESULTS = 5
+DESTINATION = "REK"        # city or airport code
+DEPARTURE_DATE = "2026-08-11"
+RETURN_DATE = "2026-08-12"
+ALLOW_NEXT_DAY = True
+MAX_RESULTS = 10
