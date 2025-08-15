@@ -1,7 +1,6 @@
 import os
 import logging
 import smtplib
-import requests
 from datetime import datetime, timedelta
 from email.mime.text import MIMEText
 from amadeus import Client, ResponseError
@@ -59,29 +58,34 @@ def search_flights(origin, destination, departure_date, return_date, max_results
         return []
 
 def summarize_with_ai(flights):
-    """Generate an AI summary of flight options using OpenAI 1.0+ interface."""
+    """Generate an AI summary of flight options using GPT-3.5-turbo."""
     if not flights:
         return "No flights found."
 
     try:
-        flight_descriptions = []
-        for f in flights:
-            price = f["price"]["total"]
-            dep = f["itineraries"][0]["segments"][0]["departure"]["iataCode"]
-            arr = f["itineraries"][0]["segments"][-1]["arrival"]["iataCode"]
-            carrier = f["itineraries"][0]["segments"][0]["carrierCode"]
-            flight_descriptions.append(f"{carrier} {dep}->{arr}, ${price}")
+        flight_descriptions = [
+            f"{f['itineraries'][0]['segments'][0]['carrierCode']} "
+            f"{f['itineraries'][0]['segments'][0]['departure']['iataCode']}->"
+            f"{f['itineraries'][0]['segments'][-1]['arrival']['iataCode']}, "
+            f"${f['price']['total']}"
+            for f in flights
+        ]
 
         prompt = "Summarize these flight options in a helpful way:\n" + "\n".join(flight_descriptions)
 
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-3.5-turbo",
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=300
+            max_tokens=150
         )
+
         summary = response.choices[0].message.content
         logging.info("AI summary generated successfully")
         return summary
+
+    except openai.error.RateLimitError:
+        logging.warning("OpenAI quota exceeded or rate limited, skipping AI summary.")
+        return "AI summary unavailable due to OpenAI quota limits."
     except Exception as e:
         logging.error(f"OpenAI API error: {e}")
         return "AI summary failed."
