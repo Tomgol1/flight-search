@@ -1,11 +1,7 @@
 import os
-import json
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from datetime import datetime, timedelta
-
-import openai
 import requests
 
 from config import ORIGIN, DESTINATION, DATE_FROM, DATE_TO, NIGHTS_IN_DST_FROM, NIGHTS_IN_DST_TO, MAX_PRICE
@@ -13,6 +9,7 @@ from email_formatter import build_email_body
 
 # Email recipient from environment
 SEND_TO = os.getenv("EMAIL_RECEIVER")
+
 
 def search_flights():
     """Query flight search API for results"""
@@ -61,7 +58,7 @@ def main():
 
         # Prepare email
         subject = f"Found {len(flights)} flight(s) from {ORIGIN} to {DESTINATION}"
-        body = build_email_body(flights, ORIGIN, DESTINATION)
+        body = build_email_body(flights)
 
         # Send email
         send_email(subject, body)
