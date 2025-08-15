@@ -1,3 +1,4 @@
-requests
+amadeus
 openai
-yfinance
+requests
+python-dotenv
