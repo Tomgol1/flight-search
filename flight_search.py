@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from email.mime.text import MIMEText
 from amadeus import Client, ResponseError
 import openai
+from config import ORIGIN, DESTINATION, DEPARTURE_DATE, RETURN_DATE, ALLOW_NEXT_DAY, MAX_RESULTS
 
 # --- Setup Logging ---
 logging.basicConfig(
@@ -23,19 +24,13 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 EMAIL_USER = os.getenv("EMAIL_USER")
 EMAIL_PASS = os.getenv("EMAIL_PASS")
 SEND_TO = os.getenv("EMAIL_RECEIVER")
-
-# --- Configurable Parameters ---
-ORIGIN = "NYC"             # city or airport code
-DESTINATION = "LON"        # city or airport code
-DEPARTURE_DATE = "2025-09-01"
-RETURN_DATE = "2025-09-10"
-ALLOW_NEXT_DAY = True
-MAX_RESULTS = 10
+if not SEND_TO:
+    raise ValueError("EMAIL_RECEIVER environment variable not set")
 
 # --- Setup Amadeus Client ---
 amadeus = Client(client_id=AMADEUS_API_KEY, client_secret=AMADEUS_API_SECRET)
 
-# --- Setup OpenAI Client (1.0+ interface) ---
+# --- Setup OpenAI Client ---
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
 # --- Helper Functions ---
@@ -106,6 +101,44 @@ def send_email(subject, body, recipient):
 def build_search_link(origin, destination, departure_date, return_date):
     return f"https://www.kayak.com/flights/{origin}-{destination}/{departure_date}/{return_date}?sort=bestflight_a"
 
+def build_email_body(flights, departure_dates, return_dates, summary):
+    body = "Flight Search Results:\n\n"
+    
+    for f in flights:
+        itinerary = f["itineraries"][0]
+        segments = itinerary["segments"]
+        price = f["price"]["total"]
+        carrier = segments[0]["carrierCode"]
+        
+        body += f"Airline: {carrier}\n"
+        for i, seg in enumerate(segments):
+            dep_airport = seg["departure"]["iataCode"]
+            dep_time = seg["departure"]["at"]
+            arr_airport = seg["arrival"]["iataCode"]
+            arr_time = seg["arrival"]["at"]
+            duration = seg.get("duration", "N/A")
+            
+            body += f"Segment {i+1}: {dep_airport} ({dep_time}) -> {arr_airport} ({arr_time}), Duration: {duration}\n"
+            
+            if i < len(segments) - 1:
+                next_dep_time = segments[i+1]["departure"]["at"]
+                try:
+                    stop_duration = datetime.fromisoformat(next_dep_time) - datetime.fromisoformat(arr_time)
+                    body += f"  Stopover: {stop_duration}\n"
+                except Exception:
+                    body += "  Stopover: N/A\n"
+        
+        body += f"Price: ${price}\n\n"
+
+    body += "Flight Search Links:\n"
+    for dep in departure_dates:
+        for ret in return_dates:
+            link = build_search_link(ORIGIN, DESTINATION, dep, ret)
+            body += f"{dep} → {ret}: {link}\n"
+
+    body += "\n\n---\nAI Summary:\n" + summary
+    return body
+
 # --- Main Job ---
 def run_job():
     try:
@@ -128,27 +161,8 @@ def run_job():
             send_email("Flight Search Results", "No flights found.", SEND_TO)
             return
 
-        # Generate AI summary
         summary = summarize_with_ai(all_flights)
-
-        # Build email body
-        body = "Flight Search Results:\n\n"
-        for f in all_flights:
-            price = f["price"]["total"]
-            dep = f["itineraries"][0]["segments"][0]["departure"]["iataCode"]
-            arr = f["itineraries"][0]["segments"][-1]["arrival"]["iataCode"]
-            carrier = f["itineraries"][0]["segments"][0]["carrierCode"]
-            body += f"{carrier} {dep}->{arr}, ${price}\n"
-
-        body += "\nFlight Search Links:\n"
-        for dep in departure_dates:
-            for ret in return_dates:
-                link = build_search_link(ORIGIN, DESTINATION, dep, ret)
-                body += f"{dep} → {ret}: {link}\n"
-
-        body += "\n\n---\nAI Summary:\n" + summary
-
-        # Send email
+        body = build_email_body(all_flights, departure_dates, return_dates, summary)
         send_email("Flight Search Results", body, SEND_TO)
 
     except Exception as e:
