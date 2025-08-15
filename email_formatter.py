@@ -1,78 +1,74 @@
 from datetime import datetime
 
-def build_search_link(origin, destination, departure_date, return_date):
-    return f"https://www.kayak.com/flights/{origin}-{destination}/{departure_date}/{return_date}?sort=bestflight_a"
+def format_datetime(dt_str):
+    """Convert datetime string to readable format (assumes ISO 8601)."""
+    try:
+        dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
+        return dt.strftime("%a, %d %b %Y %H:%M")
+    except Exception:
+        return dt_str  # fallback
 
-def build_email_body(flights, departure_dates, return_dates, summary, origin, destination):
-    html = """
-    <html>
-    <head>
-      <style>
-        table {border-collapse: collapse; width: 100%;}
-        th, td {border: 1px solid #ddd; padding: 8px;}
-        th {background-color: #f2f2f2; text-align: left;}
-        tr:hover {background-color: #f9f9f9;}
-      </style>
-    </head>
-    <body>
-      <h2>Flight Search Results</h2>
-      <table>
-        <tr>
-          <th>Airline</th>
-          <th>Segment</th>
-          <th>Departure</th>
-          <th>Arrival</th>
-          <th>Duration</th>
-          <th>Stopover</th>
-          <th>Price</th>
+def build_email_body(flights, origin, destination):
+    if not flights:
+        return f"""
+        <html>
+        <body style="font-family: Arial, sans-serif; background-color: #f9f9f9; color: #333;">
+            <h2 style="color:#444;">No Flights Found</h2>
+            <p>There are no available flights from <b>{origin}</b> to <b>{destination}</b> at the moment.</p>
+        </body>
+        </html>
+        """
+
+    rows = ""
+    for flight in flights:
+        airline = flight.get("airline", "Unknown Airline")
+        price = flight.get("price", "N/A")
+        departure = format_datetime(flight.get("departure", ""))
+        arrival = format_datetime(flight.get("arrival", ""))
+        dep_airport = flight.get("origin", origin)
+        arr_airport = flight.get("destination", destination)
+        stops = flight.get("stops", [])
+        duration = flight.get("duration", "N/A")
+
+        stop_info = "Direct Flight"
+        if stops:
+            stop_info = "<br>".join(
+                [f"Stop in {s.get('airport', '???')} ({s.get('duration', '')})" for s in stops]
+            )
+
+        rows += f"""
+        <tr style="background-color: #fff;">
+            <td style="padding: 15px; border-bottom: 1px solid #ddd;">
+                <div style="font-size: 16px; font-weight: bold; color: #2c3e50;">{airline}</div>
+                <div style="margin-top: 8px; font-size: 14px; color: #555;">
+                    <b>{dep_airport}</b> → <b>{arr_airport}</b><br>
+                    <span>Departure: {departure}</span><br>
+                    <span>Arrival: {arrival}</span><br>
+                    <span>Duration: {duration}</span><br>
+                    <span>{stop_info}</span>
+                </div>
+            </td>
+            <td style="padding: 15px; border-bottom: 1px solid #ddd; text-align: right; vertical-align: middle;">
+                <div style="font-size: 18px; font-weight: bold; color: #27ae60;">{price}</div>
+            </td>
         </tr>
-    """
+        """
 
-    for f in flights:
-        itinerary = f["itineraries"][0]
-        segments = itinerary["segments"]
-        price = f["price"]["total"]
-        carrier = segments[0]["carrierCode"]
-
-        for i, seg in enumerate(segments):
-            dep_airport = seg["departure"]["iataCode"]
-            dep_time = seg["departure"]["at"]
-            arr_airport = seg["arrival"]["iataCode"]
-            arr_time = seg["arrival"]["at"]
-            duration = seg.get("duration", "N/A")
-
-            stopover = "—"
-            if i < len(segments) - 1:
-                next_dep_time = segments[i+1]["departure"]["at"]
-                try:
-                    stop_duration = datetime.fromisoformat(next_dep_time) - datetime.fromisoformat(arr_time)
-                    stopover = str(stop_duration)
-                except Exception:
-                    stopover = "N/A"
-
-            html += f"""
-            <tr>
-              <td>{carrier}</td>
-              <td>{i+1}</td>
-              <td>{dep_airport} ({dep_time})</td>
-              <td>{arr_airport} ({arr_time})</td>
-              <td>{duration}</td>
-              <td>{stopover}</td>
-              <td>${price}</td>
-            </tr>
-            """
-
-    html += "<tr><td colspan='7'><b>Flight Search Links:</b><br>"
-    for dep in departure_dates:
-        for ret in return_dates:
-            link = build_search_link(origin, destination, dep, ret)
-            html += f'<a href="{link}">{dep} → {ret}</a><br>'
-    html += "</td></tr>"
-
-    html += f"""
-      </table>
-      <h3>AI Summary</h3>
-      <p>{summary}</p>
+    html = f"""
+    <html>
+    <body style="font-family: Arial, sans-serif; background-color: #f4f6f7; margin: 0; padding: 20px; color: #333;">
+        <div style="max-width: 700px; margin: auto; background: white; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); overflow: hidden;">
+            <div style="background: linear-gradient(90deg, #4facfe, #00f2fe); padding: 20px; color: white; text-align: center;">
+                <h1 style="margin: 0; font-size: 24px;">Flight Search Results</h1>
+                <p style="margin: 5px 0 0 0; font-size: 14px;">{origin} → {destination}</p>
+            </div>
+            <table style="width: 100%; border-collapse: collapse;">
+                {rows}
+            </table>
+            <div style="padding: 15px; text-align: center; font-size: 12px; color: #888;">
+                ✈️ Powered by Flight Search Bot
+            </div>
+        </div>
     </body>
     </html>
     """
