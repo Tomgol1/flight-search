@@ -22,6 +22,7 @@ AMADEUS_API_SECRET = os.getenv("AMADEUS_API_SECRET")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 EMAIL_USER = os.getenv("EMAIL_USER")
 EMAIL_PASS = os.getenv("EMAIL_PASS")
+SEND_TO = os.getenv("EMAIL_RECEIVER")
 
 # --- Configurable Parameters ---
 ORIGIN = "NYC"
@@ -30,7 +31,6 @@ DEPARTURE_DATE = "2025-09-01"
 RETURN_DATE = "2025-09-10"
 ALLOW_NEXT_DAY = True
 MAX_RESULTS = 10
-SEND_TO = "your_email@example.com"
 
 # --- Setup Clients ---
 amadeus = Client(client_id=AMADEUS_API_KEY, client_secret=AMADEUS_API_SECRET)
