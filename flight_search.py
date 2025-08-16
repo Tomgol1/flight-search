@@ -7,6 +7,7 @@ from amadeus import Client, ResponseError
 import anthropic
 from config import ORIGIN, DESTINATION, DEPARTURE_DATE, RETURN_DATE, ALLOW_DEPARTURE_NEXT_DAY, ALLOW_RETURN_NEXT_DAY, MAX_RESULTS, MAX_STOPS
 from email_formatter import build_email_body
+from cache_manager import cache
 
 # --- Logging ---
 logging.basicConfig(
@@ -258,6 +259,11 @@ def run_job():
 
         summary = summarize_with_claude(all_flights)
         html_body = build_email_body(all_flights, departure_dates, return_dates, summary, ORIGIN, DESTINATION, amadeus)
+        
+        # Log cache statistics
+        cache_stats = cache.get_cache_stats()
+        logging.info(f"Cache stats: {cache_stats['airlines_cached']} airlines, {cache_stats['airports_cached']} airports cached")
+        
         send_email("Flight Search Results", html_body, SEND_TO)
 
     except Exception as e:
