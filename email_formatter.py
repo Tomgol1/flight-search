@@ -1,6 +1,8 @@
 from datetime import datetime
 import logging
 import re
+
+def _format_datetime(dt_str):
     """Format ISO datetime to readable format"""
     try:
         dt = datetime.fromisoformat(dt_str.replace('Z', '+00:00'))
