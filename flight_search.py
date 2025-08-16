@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from email.mime.text import MIMEText
 from amadeus import Client, ResponseError
 import anthropic
-from config import ORIGIN, DESTINATION, DEPARTURE_DATE, RETURN_DATE, ALLOW_NEXT_DAY, MAX_RESULTS
+from config import ORIGIN, DESTINATION, DEPARTURE_DATE, RETURN_DATE, ALLOW_DEPARTURE_NEXT_DAY, ALLOW_RETURN_NEXT_DAY, MAX_RESULTS
 from email_formatter import build_email_body
 
 # --- Logging ---
@@ -184,10 +184,14 @@ def run_job():
     try:
         departure_dates = [DEPARTURE_DATE]
         return_dates = [RETURN_DATE]
-        if ALLOW_NEXT_DAY:
+        
+        # Add next day options separately for departure and return
+        if ALLOW_DEPARTURE_NEXT_DAY:
             dep_plus = (datetime.strptime(DEPARTURE_DATE, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
-            ret_plus = (datetime.strptime(RETURN_DATE, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
             departure_dates.append(dep_plus)
+            
+        if ALLOW_RETURN_NEXT_DAY:
+            ret_plus = (datetime.strptime(RETURN_DATE, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
             return_dates.append(ret_plus)
 
         all_flights = []
@@ -201,7 +205,7 @@ def run_job():
             return
 
         summary = summarize_with_claude(all_flights)
-        html_body = build_email_body(all_flights, departure_dates, return_dates, summary, ORIGIN, DESTINATION)
+        html_body = build_email_body(all_flights, departure_dates, return_dates, summary, ORIGIN, DESTINATION, amadeus)
         send_email("Flight Search Results", html_body, SEND_TO)
 
     except Exception as e:
