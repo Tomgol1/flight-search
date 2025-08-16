@@ -1,6 +1,7 @@
 from datetime import datetime
 import logging
 import re
+from cache_manager import cache
 
 def _format_datetime(dt_str):
     """Format ISO datetime to readable format"""
@@ -60,108 +61,6 @@ def _calculate_layover_duration(arrival_time, departure_time):
     except Exception:
         return "Unknown"
 
-def get_airline_name_from_amadeus(amadeus_client, carrier_code):
-    """Get airline name using Amadeus API"""
-    try:
-        response = amadeus_client.reference_data.airlines.get(airlineCodes=carrier_code)
-        if response.data:
-            return response.data[0]['businessName']
-    except Exception as e:
-        logging.debug(f"Could not fetch airline name for {carrier_code}: {e}")
-    return None
-
-def get_airport_name_from_amadeus(amadeus_client, airport_code):
-    """Get airport name using Amadeus API"""
-    try:
-        response = amadeus_client.reference_data.locations.get(
-            keyword=airport_code,
-            subType='AIRPORT'
-        )
-        if response.data:
-            for location in response.data:
-                if location['iataCode'] == airport_code:
-                    return location['name']
-    except Exception as e:
-        logging.debug(f"Could not fetch airport name for {airport_code}: {e}")
-    return None
-
-def _get_airline_name(carrier_code, amadeus_client=None):
-    """Convert airline code to readable name, with API fallback"""
-    
-    # Try API first if available
-    if amadeus_client:
-        api_name = get_airline_name_from_amadeus(amadeus_client, carrier_code)
-        if api_name:
-            return api_name
-    
-    # Fallback to static mapping
-    airline_names = {
-        'LH': 'Lufthansa',
-        'BA': 'British Airways',
-        'AF': 'Air France',
-        'KL': 'KLM Royal Dutch Airlines',
-        'TK': 'Turkish Airlines',
-        'EK': 'Emirates',
-        'QR': 'Qatar Airways',
-        'LY': 'El Al Israel Airlines',
-        'W6': 'Wizz Air',
-        'FR': 'Ryanair',
-        'U2': 'easyJet',
-        'OS': 'Austrian Airlines',
-        'LX': 'Swiss International Air Lines',
-        'SN': 'Brussels Airlines',
-        'AY': 'Finnair',
-        'SK': 'Scandinavian Airlines',
-        'IB': 'Iberia',
-        'VY': 'Vueling',
-        'TP': 'TAP Air Portugal',
-        'UX': 'Air Europa',
-        'DL': 'Delta Air Lines',
-        'AA': 'American Airlines',
-        'UA': 'United Airlines',
-        'AC': 'Air Canada',
-        'VS': 'Virgin Atlantic',
-        'WF': 'Widerøe',
-        'FI': 'Icelandair',
-        '6H': 'Israir Airlines',
-        'UP': 'Bahamasair'
-    }
-    return airline_names.get(carrier_code, carrier_code)
-
-def _get_airport_name(airport_code, amadeus_client=None):
-    """Convert airport code to readable name, with API fallback"""
-    
-    # Try API first if available
-    if amadeus_client:
-        api_name = get_airport_name_from_amadeus(amadeus_client, airport_code)
-        if api_name:
-            return api_name
-    
-    # Fallback to static mapping for common airports
-    airport_names = {
-        'TLV': 'Ben Gurion Airport, Tel Aviv',
-        'KEF': 'Keflavik International Airport, Reykjavik',
-        'LHR': 'Heathrow Airport, London',
-        'CDG': 'Charles de Gaulle Airport, Paris',
-        'FRA': 'Frankfurt Airport',
-        'AMS': 'Amsterdam Schiphol Airport',
-        'IST': 'Istanbul Airport',
-        'DXB': 'Dubai International Airport',
-        'DOH': 'Hamad International Airport, Doha',
-        'VIE': 'Vienna International Airport',
-        'ZUR': 'Zurich Airport',
-        'BRU': 'Brussels Airport',
-        'HEL': 'Helsinki Airport',
-        'ARN': 'Stockholm Arlanda Airport',
-        'MAD': 'Madrid-Barajas Airport',
-        'BCN': 'Barcelona Airport',
-        'LIS': 'Lisbon Airport',
-        'JFK': 'John F. Kennedy International Airport, New York',
-        'LAX': 'Los Angeles International Airport',
-        'ORD': 'O\'Hare International Airport, Chicago'
-    }
-    return airport_names.get(airport_code, f"{airport_code} Airport")
-
 def _get_stop_information(segments):
     """Extract detailed stop information from flight segments"""
     if len(segments) <= 1:
@@ -186,58 +85,60 @@ def _get_stop_information(segments):
 
 def build_email_body(flights, departure_dates, return_dates, ai_summary, origin, destination, amadeus_client=None):
     """
-    Build a well-formatted HTML email body with flight results
+    Build a well-formatted HTML email body with improved design
     """
     if not flights:
         return """
         <html>
-        <body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background:#f8f9fa; padding:20px; color:#333;">
-            <div style="max-width:800px; margin:auto; background:white; border-radius:10px; padding:30px; box-shadow:0 4px 12px rgba(0,0,0,0.1);">
-                <h2 style="text-align:center; color:#e74c3c; margin-bottom:20px;">✈️ No Flights Found</h2>
-                <p style="text-align:center; font-size:16px;">No flights available for your search criteria.</p>
+        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; background:#f5f7fa; margin:0; padding:20px;">
+            <div style="max-width:700px; margin:0 auto; background:white; border-radius:16px; box-shadow:0 4px 24px rgba(0,0,0,0.08); overflow:hidden;">
+                <div style="background:linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding:40px; text-align:center; color:white;">
+                    <h1 style="margin:0; font-size:32px; font-weight:600;">✈️ No Flights Found</h1>
+                    <p style="margin:16px 0 0; font-size:16px; opacity:0.9;">No flights available for your search criteria.</p>
+                </div>
             </div>
         </body>
         </html>
         """
 
-    # Get currency - but display as USD since you mentioned all prices are USD
-    currency_code = flights[0]['price']['currency']
+    # Get origin and destination airport names using cache
+    origin_name = cache.get_airport_name(origin, amadeus_client)
+    destination_name = cache.get_airport_name(destination, amadeus_client)
     
     html = f"""
+    <!DOCTYPE html>
     <html>
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+            body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; }}
+        </style>
     </head>
-    <body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background:#f8f9fa; padding:20px; color:#333; line-height:1.6;">
-        <div style="max-width:900px; margin:auto; background:white; border-radius:12px; overflow:hidden; box-shadow:0 6px 20px rgba(0,0,0,0.1);">
+    <body style="margin:0; padding:20px; background:#f5f7fa; color:#1f2937;">
+        <div style="max-width:700px; margin:0 auto; background:white; border-radius:16px; box-shadow:0 4px 24px rgba(0,0,0,0.08); overflow:hidden;">
             
             <!-- Header -->
-            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding:30px; text-align:center; color:white;">
-                <h1 style="margin:0; font-size:28px; font-weight:300;">✈️ Flight Search Results</h1>
-                <p style="margin:10px 0 0 0; font-size:18px; opacity:0.9;">
-                    <strong>{_get_airport_name(origin, amadeus_client)}</strong> → <strong>{_get_airport_name(destination, amadeus_client)}</strong>
-                </p>
-                <p style="margin:5px 0 0 0; font-size:14px; opacity:0.8;">
-                    Found {len(flights)} flight options • All prices in USD
-                </p>
-            </div>
-
-            <!-- AI Summary Section -->
-            <div style="padding:30px; border-bottom:2px solid #f1f3f4;">
-                <h2 style="color:#4a5568; margin:0 0 20px 0; font-size:22px; font-weight:600;">
-                    🤖 AI Flight Analysis
-                </h2>
-                <div style="background:#f7fafc; padding:20px; border-radius:8px; border-left:4px solid #667eea;">
-                    {ai_summary}
+            <div style="background:linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding:40px; text-align:center; color:white;">
+                <h1 style="margin:0; font-size:32px; font-weight:600;">✈️ Flight Search Results</h1>
+                <div style="margin:20px 0; font-size:18px; font-weight:500;">
+                    {origin_name.split(',')[0]} → {destination_name.split(',')[0]}
+                </div>
+                <div style="font-size:14px; opacity:0.8;">
+                    {len(flights)} options found • All prices in USD
                 </div>
             </div>
 
-            <!-- Flight Options -->
-            <div style="padding:30px;">
-                <h2 style="color:#4a5568; margin:0 0 25px 0; font-size:22px; font-weight:600;">
-                    📋 All Flight Options
-                </h2>
+            <!-- AI Summary -->
+            <div style="padding:32px;">
+                <div style="background:linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%); border-radius:12px; padding:24px; margin-bottom:32px;">
+                    <h2 style="margin:0 0 16px; font-size:18px; font-weight:600; color:#374151;">🤖 AI Flight Analysis</h2>
+                    <div style="color:#4b5563; line-height:1.6;">
+                        {ai_summary}
+                    </div>
+                </div>
+                
+                <h2 style="margin:0 0 24px; font-size:20px; font-weight:600; color:#374151;">Flight Options</h2>
     """
 
     for idx, flight in enumerate(flights, start=1):
@@ -245,9 +146,9 @@ def build_email_body(flights, departure_dates, return_dates, ai_summary, origin,
         dep_seg = segments[0]
         arr_seg = segments[-1]
         
-        # Extract flight details
+        # Extract flight details using cache
         airline_code = dep_seg['carrierCode']
-        airline_name = _get_airline_name(airline_code, amadeus_client)
+        airline_name = cache.get_airline_name(airline_code, amadeus_client)
         flight_number = dep_seg['number']
         
         dep_airport = dep_seg['departure']['iataCode']
@@ -256,111 +157,127 @@ def build_email_body(flights, departure_dates, return_dates, ai_summary, origin,
         arr_time = _format_datetime(arr_seg['arrival']['at'])
         
         duration = _format_duration(flight['itineraries'][0]['duration'])
-        price = flight['price']['total']
+        price = float(flight['price']['total'])
         stops_info = _get_stop_information(segments)
         stops_count = len(stops_info)
         
-        # Determine stops text and color
+        # Format price nicely
+        price_display = f"${price:,.2f}".replace('.00', '')
+        
+        # Determine stops styling
         if stops_count == 0:
-            stops_text = "Direct"
-            stops_color = "#10b981"  # green
+            stops_badge = f'<span style="background:#10b981; color:white; padding:6px 12px; border-radius:20px; font-size:12px; font-weight:600;">Direct</span>'
             stops_detail = ""
-        elif stops_count == 1:
-            stop = stops_info[0]
-            stops_text = "1 Stop"
-            stops_color = "#f59e0b"  # yellow
-            stops_detail = f"<br><small style='color:#718096;'>via {_get_airport_name(stop['airport'], amadeus_client)} ({stop['duration']} layover)</small>"
         else:
-            stops_text = f"{stops_count} Stops"
-            stops_color = "#ef4444"  # red
-            stop_airports = [_get_airport_name(stop['airport'], amadeus_client).split(',')[0] for stop in stops_info]
-            stops_detail = f"<br><small style='color:#718096;'>via {', '.join(stop_airports)}</small>"
+            stop_color = "#f59e0b" if stops_count == 1 else "#ef4444"
+            stops_text = f"{stops_count} Stop{'s' if stops_count > 1 else ''}"
+            stops_badge = f'<span style="background:{stop_color}; color:white; padding:6px 12px; border-radius:20px; font-size:12px; font-weight:600;">{stops_text}</span>'
+            
+            if stops_count == 1:
+                stop = stops_info[0]
+                stop_name = cache.get_airport_name(stop['airport'], amadeus_client).split(',')[0]
+                stops_detail = f'<div style="font-size:13px; color:#6b7280; margin-top:8px;">via {stop_name} ({stop["duration"]} layover)</div>'
+            else:
+                stop_names = [cache.get_airport_name(stop['airport'], amadeus_client).split(',')[0] for stop in stops_info]
+                stops_detail = f'<div style="font-size:13px; color:#6b7280; margin-top:8px;">via {", ".join(stop_names)}</div>'
 
-        # Create flight card
+        # Create flight card with improved design
         html += f"""
-                <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:10px; margin-bottom:20px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,0.05);">
+                <div style="border:1px solid #e5e7eb; border-radius:12px; margin-bottom:20px; background:white; box-shadow:0 1px 3px rgba(0,0,0,0.1);">
                     
                     <!-- Flight Header -->
-                    <div style="background:#f8fafc; padding:15px 20px; border-bottom:1px solid #e2e8f0;">
-                        <div style="display:flex; justify-content:space-between; align-items:center;">
-                            <div>
-                                <span style="font-weight:700; font-size:18px; color:#2d3748;">Option {idx}</span>
-                                <span style="margin-left:10px; color:#718096; font-size:14px;">{airline_name} {flight_number}</span>
+                    <div style="background:#f9fafb; padding:20px; border-radius:12px 12px 0 0; border-bottom:1px solid #e5e7eb; display:flex; justify-content:space-between; align-items:center;">
+                        <div>
+                            <div style="font-weight:700; font-size:16px; color:#111827;">Option {idx}</div>
+                            <div style="font-size:13px; color:#6b7280; margin-top:2px;">
+                                {airline_name} {flight_number}
                             </div>
-                            <div style="text-align:right;">
-                                <div style="font-size:24px; font-weight:700; color:#2d3748;">${price}</div>
-                                <div style="font-size:12px; color:#718096;">USD</div>
-                            </div>
+                        </div>
+                        <div style="text-align:right;">
+                            <div style="font-size:24px; font-weight:700; color:#111827;">{price_display}</div>
+                            <div style="font-size:11px; color:#6b7280; font-weight:500;">USD</div>
                         </div>
                     </div>
                     
-                    <!-- Flight Details -->
-                    <div style="padding:20px;">
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
-                            <div style="text-align:center; flex:1;">
-                                <div style="font-size:20px; font-weight:600; color:#2d3748;">{dep_airport}</div>
-                                <div style="font-size:14px; color:#718096; margin-top:2px;">{dep_time}</div>
-                                <div style="font-size:12px; color:#a0aec0; margin-top:2px;">{_get_airport_name(dep_airport, amadeus_client).split(',')[0]}</div>
+                    <!-- Flight Route -->
+                    <div style="padding:24px;">
+                        <div style="display:flex; align-items:center; margin-bottom:20px;">
+                            
+                            <!-- Departure -->
+                            <div style="flex:1; text-align:center;">
+                                <div style="font-size:28px; font-weight:700; color:#111827; letter-spacing:-0.5px;">{dep_airport}</div>
+                                <div style="font-size:14px; color:#374151; margin:4px 0;">{dep_time}</div>
+                                <div style="font-size:12px; color:#9ca3af;">
+                                    {cache.get_airport_name(dep_airport, amadeus_client).split(',')[0]}
+                                </div>
                             </div>
                             
-                            <div style="flex:1; text-align:center; padding:0 20px;">
-                                <div style="border-top:2px solid #cbd5e0; position:relative; margin:10px 0;">
-                                    <span style="background:white; padding:0 10px; position:absolute; top:-10px; left:50%; transform:translateX(-50%); font-size:12px; color:#718096;">
-                                        {duration}
-                                    </span>
+                            <!-- Flight Path -->
+                            <div style="flex:2; text-align:center; padding:0 24px;">
+                                <div style="position:relative; margin:16px 0;">
+                                    <div style="border-top:2px solid #d1d5db; position:relative;">
+                                        <div style="position:absolute; top:-8px; left:50%; transform:translateX(-50%); background:white; padding:0 12px; font-size:12px; color:#6b7280; font-weight:500;">
+                                            {duration}
+                                        </div>
+                                    </div>
                                 </div>
-                                <div style="margin-top:5px;">
-                                    <span style="background-color:{stops_color}; color:white; padding:4px 8px; border-radius:12px; font-size:12px; font-weight:600;">
-                                        {stops_text}
-                                    </span>
+                                <div style="margin-top:12px;">
+                                    {stops_badge}
                                     {stops_detail}
                                 </div>
                             </div>
                             
-                            <div style="text-align:center; flex:1;">
-                                <div style="font-size:20px; font-weight:600; color:#2d3748;">{arr_airport}</div>
-                                <div style="font-size:14px; color:#718096; margin-top:2px;">{arr_time}</div>
-                                <div style="font-size:12px; color:#a0aec0; margin-top:2px;">{_get_airport_name(arr_airport, amadeus_client).split(',')[0]}</div>
+                            <!-- Arrival -->
+                            <div style="flex:1; text-align:center;">
+                                <div style="font-size:28px; font-weight:700; color:#111827; letter-spacing:-0.5px;">{arr_airport}</div>
+                                <div style="font-size:14px; color:#374151; margin:4px 0;">{arr_time}</div>
+                                <div style="font-size:12px; color:#9ca3af;">
+                                    {cache.get_airport_name(arr_airport, amadeus_client).split(',')[0]}
+                                </div>
                             </div>
+                            
                         </div>
         """
 
         # Add detailed stop information if there are stops
         if stops_info:
-            html += """
-                        <div style="margin-top:20px; padding-top:15px; border-top:1px solid #e2e8f0;">
-                            <h4 style="margin:0 0 10px 0; color:#4a5568; font-size:14px;">✈️ Stop Details:</h4>
-            """
-            for i, stop in enumerate(stops_info):
-                airport_name = _get_airport_name(stop['airport'], amadeus_client)
-                html += f"""
-                            <div style="margin-bottom:8px; padding:8px 12px; background:#f7fafc; border-radius:6px; font-size:13px;">
-                                <strong>{stop['airport']}</strong> - {airport_name.split(',')[0]} 
-                                <span style="color:#718096;">({stop['duration']} layover)</span>
+            html += '''
+                        <div style="background:#f9fafb; border-radius:8px; padding:16px; margin:20px 0;">
+                            <div style="font-weight:600; color:#374151; font-size:14px; margin-bottom:12px;">✈️ Stop Details</div>
+            '''
+            for stop in stops_info:
+                airport_name = cache.get_airport_name(stop['airport'], amadeus_client)
+                html += f'''
+                            <div style="background:white; border:1px solid #e5e7eb; border-radius:6px; padding:12px; margin-bottom:8px; font-size:13px;">
+                                <strong style="color:#111827;">{stop['airport']}</strong> - {airport_name.split(',')[0]}
+                                <span style="color:#6b7280;">({stop['duration']} layover)</span>
                             </div>
-                """
-            html += "</div>"
+                '''
+            html += '</div>'
 
-        html += f"""
-                        <!-- Booking Link -->
+        # Booking button
+        html += f'''
                         <div style="text-align:center; margin-top:20px;">
                             <a href="https://www.kayak.com/flights/{dep_airport}-{arr_airport}" 
-                               style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color:white; padding:12px 24px; text-decoration:none; border-radius:25px; font-weight:600; font-size:14px; display:inline-block;">
+                               style="background:linear-gradient(135deg, #667eea 0%, #764ba2 100%); color:white; padding:14px 28px; text-decoration:none; border-radius:25px; font-weight:600; font-size:14px; display:inline-block; box-shadow:0 2px 8px rgba(102, 126, 234, 0.3);">
                                 🔗 Search on Kayak
                             </a>
                         </div>
                     </div>
                 </div>
-        """
+        '''
 
-    html += """
+    # Footer with cache stats
+    cache_stats = cache.get_cache_stats()
+    html += f"""
             </div>
             
             <!-- Footer -->
-            <div style="background:#f8fafc; padding:20px; text-align:center; border-top:1px solid #e2e8f0;">
-                <p style="margin:0; color:#718096; font-size:14px;">
-                    🤖 Automated flight search • Times shown in local timezone • Powered by Amadeus API
-                </p>
+            <div style="background:#f9fafb; padding:24px; text-align:center; border-top:1px solid #e5e7eb;">
+                <div style="color:#6b7280; font-size:13px; line-height:1.5;">
+                    🤖 Automated flight search powered by Amadeus API<br>
+                    <span style="font-size:11px;">Cache: {cache_stats['airlines_cached']} airlines, {cache_stats['airports_cached']} airports stored</span>
+                </div>
             </div>
         </div>
     </body>
