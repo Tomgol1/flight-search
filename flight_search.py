@@ -25,12 +25,26 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 EMAIL_USER = os.getenv("EMAIL_USER")
 EMAIL_PASS = os.getenv("EMAIL_PASS")
 SEND_TO = os.getenv("EMAIL_RECEIVER")
+
+# Validate required environment variables
 if not SEND_TO:
     raise ValueError("EMAIL_RECEIVER environment variable not set")
+if not ANTHROPIC_API_KEY:
+    raise ValueError("ANTHROPIC_API_KEY environment variable not set")
+    
+logging.info(f"ANTHROPIC_API_KEY present: {bool(ANTHROPIC_API_KEY)}")
+logging.info(f"ANTHROPIC_API_KEY starts with sk-ant-: {ANTHROPIC_API_KEY.startswith('sk-ant-') if ANTHROPIC_API_KEY else False}")
 
 # --- Clients ---
 amadeus = Client(client_id=AMADEUS_API_KEY, client_secret=AMADEUS_API_SECRET)
-claude_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+
+# Initialize Claude client with explicit error handling
+try:
+    claude_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    logging.info("Claude client initialized successfully")
+except Exception as e:
+    logging.error(f"Failed to initialize Claude client: {e}")
+    claude_client = None
 
 # --- Helper Functions ---
 def search_flights(origin, destination, departure_date, return_date, max_results=5):
@@ -54,68 +68,101 @@ def summarize_with_claude(flights):
     if not flights:
         return "No flights found."
 
+    # First try simple local analysis
     try:
-        # Create detailed flight information for Claude
-        flight_details = []
-        for i, flight in enumerate(flights, 1):
-            dep_seg = flight['itineraries'][0]['segments'][0]
-            arr_seg = flight['itineraries'][0]['segments'][-1]
-            
-            # Extract flight details
-            airline = dep_seg['carrierCode']
-            departure_airport = dep_seg['departure']['iataCode']
-            arrival_airport = arr_seg['arrival']['iataCode']
-            departure_time = dep_seg['departure']['at']
-            arrival_time = arr_seg['arrival']['at']
-            duration = flight['itineraries'][0]['duration']
-            price = flight['price']['total']
-            currency = flight['price']['currency']
-            stops = len(flight['itineraries'][0]['segments']) - 1
-            
-            flight_info = (
-                f"Flight {i}: {airline} {departure_airport}→{arrival_airport}, "
-                f"Departs: {departure_time}, Arrives: {arrival_time}, "
-                f"Duration: {duration}, Stops: {stops}, "
-                f"Price: {price} {currency}"
-            )
-            flight_details.append(flight_info)
-
-        # Create prompt for Claude
-        prompt = f"""Please analyze these flight options and provide a helpful summary for a traveler:
-
-{chr(10).join(flight_details)}
-
-Please provide:
-1. The cheapest option
-2. The fastest/shortest duration option  
-3. The best overall value (considering price, duration, and convenience)
-4. Any notable patterns or recommendations
-
-Keep the summary concise and actionable for someone deciding which flight to book."""
-
-        # Call Claude API
-        response = claude_client.messages.create(
-            model="claude-3-haiku-20240307",  # Free tier friendly model
-            max_tokens=200,  # Keep it concise to save tokens
-            messages=[{
-                "role": "user",
-                "content": prompt
-            }]
-        )
-
-        summary = response.content[0].text
-        logging.info("Claude AI summary generated successfully")
+        summary = create_local_summary(flights)
+        logging.info("Using local flight summary (no AI)")
         return summary
-
-    except anthropic.RateLimitError:
-        logging.warning("Claude API rate limit exceeded, skipping AI summary.")
-        return "AI summary unavailable due to Claude API rate limits."
-    except anthropic.APIError as e:
-        logging.error(f"Claude API error: {e}")
-        return "AI summary failed due to API error."
     except Exception as e:
-        logging.error(f"Unexpected error in Claude summary: {e}")
-        return "AI summary failed due to unexpected error."
+        logging.error(f"Local summary failed: {e}")
+        return "Flight analysis temporarily unavailable."
+
+def create_local_summary(flights):
+    """Create a summary without AI - analyze flights locally"""
+    if not flights:
+        return "No flights found."
+    
+    # Extract flight data for analysis
+    flight_analysis = []
+    for i, flight in enumerate(flights, 1):
+        dep_seg = flight['itineraries'][0]['segments'][0]
+        arr_seg = flight['itineraries'][0]['segments'][-1]
+        
+        # Parse duration (format like "PT4H30M")
+        duration_str = flight['itineraries'][0]['duration']
+        duration_minutes = parse_duration_to_minutes(duration_str)
+        
+        price = float(flight['price']['total'])
+        currency = flight['price']['currency']
+        stops = len(flight['itineraries'][0]['segments']) - 1
+        airline = dep_seg['carrierCode']
+        
+        flight_analysis.append({
+            'index': i,
+            'price': price,
+            'currency': currency,
+            'duration_minutes': duration_minutes,
+            'duration_str': duration_str,
+            'stops': stops,
+            'airline': airline,
+            'departure_airport': dep_seg['departure']['iataCode'],
+            'arrival_airport': arr_seg['arrival']['iataCode']
+        })
+    
+    # Find cheapest, fastest, and best value
+    cheapest = min(flight_analysis, key=lambda x: x['price'])
+    fastest = min(flight_analysis, key=lambda x: x['duration_minutes'])
+    
+    # Calculate "value score" (lower is better: price per hour)
+    for flight in flight_analysis:
+        flight['value_score'] = flight['price'] / (flight['duration_minutes'] / 60)
+    
+    best_value = min(flight_analysis, key=lambda x: x['value_score'])
+    
+    # Build summary
+    summary_parts = []
+    
+    summary_parts.append(f"📊 <strong>Flight Analysis Summary:</strong><br>")
+    summary_parts.append(f"Found {len(flights)} flight options.<br><br>")
+    
+    summary_parts.append(f"💰 <strong>Cheapest:</strong> Option {cheapest['index']} - {cheapest['price']} {cheapest['currency']} ({cheapest['airline']}, {cheapest['duration_str']}, {cheapest['stops']} stops)<br><br>")
+    
+    summary_parts.append(f"⚡ <strong>Fastest:</strong> Option {fastest['index']} - {fastest['duration_str']} ({fastest['airline']}, {fastest['price']} {fastest['currency']}, {fastest['stops']} stops)<br><br>")
+    
+    if best_value['index'] != cheapest['index'] and best_value['index'] != fastest['index']:
+        summary_parts.append(f"⭐ <strong>Best Value:</strong> Option {best_value['index']} - Good balance of price and speed ({best_value['airline']}, {best_value['price']} {best_value['currency']}, {best_value['duration_str']})<br><br>")
+    
+    # Add some basic insights
+    avg_price = sum(f['price'] for f in flight_analysis) / len(flight_analysis)
+    direct_flights = [f for f in flight_analysis if f['stops'] == 0]
+    
+    if direct_flights:
+        summary_parts.append(f"✈️ {len(direct_flights)} direct flight(s) available<br>")
+    
+    summary_parts.append(f"📈 Average price: {avg_price:.0f} {flight_analysis[0]['currency']}")
+    
+    return "".join(summary_parts)
+
+def parse_duration_to_minutes(duration_str):
+    """Parse ISO 8601 duration (PT4H30M) to minutes"""
+    import re
+    # Remove PT prefix
+    duration_str = duration_str.replace('PT', '')
+    
+    hours = 0
+    minutes = 0
+    
+    # Extract hours
+    hour_match = re.search(r'(\d+)H', duration_str)
+    if hour_match:
+        hours = int(hour_match.group(1))
+    
+    # Extract minutes  
+    min_match = re.search(r'(\d+)M', duration_str)
+    if min_match:
+        minutes = int(min_match.group(1))
+    
+    return hours * 60 + minutes
 
 def send_email(subject, html_body, recipient):
     try:
