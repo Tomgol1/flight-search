@@ -79,7 +79,10 @@ def validate_search_parameters():
         errors.append(f"MAX_STOPS should be 0 or positive, got {MAX_STOPS}")
     
     return errors
+
 # --- Helper Functions ---
+def search_flights(origin, destination, departure_date, return_date, max_results):
+    """Search for flights using Amadeus API"""
     try:
         # Log the search parameters for debugging
         logging.info(f"Searching flights: {origin} → {destination}")
