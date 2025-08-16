@@ -285,10 +285,6 @@ We welcome contributions! Here's how to help:
 - Update documentation
 - Keep changes focused
 
-## 📄 License
-
-This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
-
 ## 🙏 Acknowledgments
 
 - **[Amadeus API](https://developers.amadeus.com)** - Comprehensive flight data
@@ -298,9 +294,7 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 
 ## 📞 Support
 
-- 📧 **Email**: Create an issue for support
 - 💬 **Discussions**: Use GitHub Discussions for questions
-- 📚 **Wiki**: Check the wiki for detailed guides
 - 🐦 **Updates**: Follow for feature announcements
 
 ---
