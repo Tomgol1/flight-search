@@ -4,7 +4,7 @@
 
 Never miss a great flight deal again! This intelligent flight search system automatically monitors flight prices, analyzes options with AI, and delivers beautifully formatted results straight to your inbox.
 
-![Flight Search Demo](https://img.shields.io/badge/Status-Active-brightgreen) ![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-Automated-blue) ![AI Powered](https://img.shields.io/badge/AI-Claude%20Powered-purple) ![License](https://img.shields.io/badge/License-MIT-yellow)
+![Flight Search Demo](https://img.shields.io/badge/Status-Active-brightgreen) ![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-Automated-blue) ![AI Powered](https://img.shields.io/badge/AI-Claude%20Powered-purple)
 
 ## 🌟 Features
 
@@ -43,7 +43,7 @@ Never miss a great flight deal again! This intelligent flight search system auto
 
 ### 1. **Fork & Setup Repository**
 ```bash
-git clone https://github.com/yourusername/flight-search-automation
+git clone https://github.com/Tomgol1/flight-search-automation
 cd flight-search-automation
 ```
 
