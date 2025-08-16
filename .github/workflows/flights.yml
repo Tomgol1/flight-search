@@ -25,7 +25,7 @@ jobs:
         env:
           AMADEUS_API_KEY: ${{ secrets.AMADEUS_API_KEY }}
           AMADEUS_API_SECRET: ${{ secrets.AMADEUS_API_SECRET }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           EMAIL_USER: ${{ secrets.EMAIL_USER }}
           EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
           EMAIL_RECEIVER: ${{ secrets.EMAIL_RECEIVER }}
