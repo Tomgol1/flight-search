@@ -46,19 +46,62 @@ except Exception as e:
     logging.error(f"Failed to initialize Claude client: {e}")
     claude_client = None
 
-# --- Helper Functions ---
-def search_flights(origin, destination, departure_date, return_date, max_results=5):
+def validate_search_parameters():
+    """Validate search parameters before making API calls"""
+    from datetime import datetime
+    
+    errors = []
+    
+    # Validate airport codes (should be 3 letters)
+    if not ORIGIN or len(ORIGIN) != 3:
+        errors.append(f"Invalid origin airport code: {ORIGIN}")
+    if not DESTINATION or len(DESTINATION) != 3:
+        errors.append(f"Invalid destination airport code: {DESTINATION}")
+    
+    # Validate dates
     try:
-        response = amadeus.shopping.flight_offers_search.get(
-            originLocationCode=origin,
-            destinationLocationCode=destination,
-            departureDate=departure_date,
-            returnDate=return_date,
-            adults=1,
-            max=max_results,
-            maxPrice=10000,  # Set high limit to avoid currency issues
-            nonStop=(MAX_STOPS == 0)  # Only direct flights if MAX_STOPS is 0
-        )
+        dep_date = datetime.strptime(DEPARTURE_DATE, "%Y-%m-%d")
+        ret_date = datetime.strptime(RETURN_DATE, "%Y-%m-%d")
+        today = datetime.now()
+        
+        if dep_date < today:
+            errors.append(f"Departure date {DEPARTURE_DATE} is in the past")
+        if ret_date < dep_date:
+            errors.append(f"Return date {RETURN_DATE} is before departure date {DEPARTURE_DATE}")
+            
+    except ValueError as e:
+        errors.append(f"Invalid date format: {e}")
+    
+    # Validate other parameters
+    if MAX_RESULTS <= 0 or MAX_RESULTS > 100:
+        errors.append(f"MAX_RESULTS should be between 1 and 100, got {MAX_RESULTS}")
+    if MAX_STOPS < 0:
+        errors.append(f"MAX_STOPS should be 0 or positive, got {MAX_STOPS}")
+    
+    return errors
+# --- Helper Functions ---
+    try:
+        # Log the search parameters for debugging
+        logging.info(f"Searching flights: {origin} → {destination}")
+        logging.info(f"Departure: {departure_date}, Return: {return_date}")
+        logging.info(f"Max results: {max_results}, Max stops: {MAX_STOPS}")
+        
+        # Build the request parameters
+        search_params = {
+            'originLocationCode': origin,
+            'destinationLocationCode': destination,
+            'departureDate': departure_date,
+            'returnDate': return_date,
+            'adults': 1,
+            'max': max_results
+        }
+        
+        # Only add nonStop if we want direct flights only
+        if MAX_STOPS == 0:
+            search_params['nonStop'] = True
+            logging.info("Searching for direct flights only")
+        
+        response = amadeus.shopping.flight_offers_search.get(**search_params)
         flights = response.data
         
         # Filter flights by maximum stops if MAX_STOPS > 0
@@ -69,11 +112,19 @@ def search_flights(origin, destination, departure_date, return_date, max_results
                 if stops <= MAX_STOPS:
                     filtered_flights.append(flight)
             flights = filtered_flights
+            logging.info(f"Filtered to {len(flights)} flights with max {MAX_STOPS} stops")
         
-        logging.info(f"Found {len(flights)} flights for {departure_date} → {return_date} (max {MAX_STOPS} stops)")
+        logging.info(f"Found {len(flights)} flights for {departure_date} → {return_date}")
         return flights
+        
     except ResponseError as e:
+        # More detailed error logging
         logging.error(f"Amadeus API error: {e}")
+        logging.error(f"Error details: {e.response.body if hasattr(e, 'response') else 'No response body'}")
+        logging.error(f"Search parameters were: origin={origin}, destination={destination}, departure={departure_date}, return={return_date}")
+        return []
+    except Exception as e:
+        logging.error(f"Unexpected error in flight search: {e}")
         return []
 
 def summarize_with_claude(flights):
@@ -167,6 +218,14 @@ def send_email(subject, html_body, recipient):
 # --- Main Job ---
 def run_job():
     try:
+        # Validate parameters first
+        validation_errors = validate_search_parameters()
+        if validation_errors:
+            error_msg = "Configuration errors found:\n" + "\n".join(validation_errors)
+            logging.error(error_msg)
+            send_email("Flight Search FAILED - Configuration Error", f"<p>{error_msg.replace(chr(10), '<br>')}</p>", SEND_TO)
+            return
+
         departure_dates = [DEPARTURE_DATE]
         return_dates = [RETURN_DATE]
         
@@ -179,6 +238,8 @@ def run_job():
             ret_plus = (datetime.strptime(RETURN_DATE, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
             return_dates.append(ret_plus)
 
+        logging.info(f"Searching {len(departure_dates)} departure dates × {len(return_dates)} return dates = {len(departure_dates) * len(return_dates)} combinations")
+
         all_flights = []
         for dep in departure_dates:
             for ret in return_dates:
@@ -186,7 +247,10 @@ def run_job():
                 all_flights.extend(flights)
 
         if not all_flights:
-            send_email("Flight Search Results", "<p>No flights found.</p>", SEND_TO)
+            logging.warning("No flights found for any date combination")
+            send_email("Flight Search Results - No Flights Found", 
+                      "<p>No flights found for your search criteria. Try adjusting your dates or increasing MAX_STOPS.</p>", 
+                      SEND_TO)
             return
 
         summary = summarize_with_claude(all_flights)
