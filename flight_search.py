@@ -4,7 +4,7 @@ import smtplib
 from datetime import datetime, timedelta
 from email.mime.text import MIMEText
 from amadeus import Client, ResponseError
-import openai
+import anthropic
 from config import ORIGIN, DESTINATION, DEPARTURE_DATE, RETURN_DATE, ALLOW_NEXT_DAY, MAX_RESULTS
 from email_formatter import build_email_body
 
@@ -21,7 +21,7 @@ logging.basicConfig(
 # --- Environment Variables ---
 AMADEUS_API_KEY = os.getenv("AMADEUS_API_KEY")
 AMADEUS_API_SECRET = os.getenv("AMADEUS_API_SECRET")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 EMAIL_USER = os.getenv("EMAIL_USER")
 EMAIL_PASS = os.getenv("EMAIL_PASS")
 SEND_TO = os.getenv("EMAIL_RECEIVER")
@@ -30,7 +30,7 @@ if not SEND_TO:
 
 # --- Clients ---
 amadeus = Client(client_id=AMADEUS_API_KEY, client_secret=AMADEUS_API_SECRET)
-client = openai.OpenAI(api_key=OPENAI_API_KEY)
+claude_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
 # --- Helper Functions ---
 def search_flights(origin, destination, departure_date, return_date, max_results=5):
@@ -50,37 +50,72 @@ def search_flights(origin, destination, departure_date, return_date, max_results
         logging.error(f"Amadeus API error: {e}")
         return []
 
-def summarize_with_ai(flights):
+def summarize_with_claude(flights):
     if not flights:
         return "No flights found."
 
     try:
-        flight_descriptions = [
-            f"{f['itineraries'][0]['segments'][0]['carrierCode']} "
-            f"{f['itineraries'][0]['segments'][0]['departure']['iataCode']}->"
-            f"{f['itineraries'][0]['segments'][-1]['arrival']['iataCode']}, "
-            f"${f['price']['total']}"
-            for f in flights
-        ]
+        # Create detailed flight information for Claude
+        flight_details = []
+        for i, flight in enumerate(flights, 1):
+            dep_seg = flight['itineraries'][0]['segments'][0]
+            arr_seg = flight['itineraries'][0]['segments'][-1]
+            
+            # Extract flight details
+            airline = dep_seg['carrierCode']
+            departure_airport = dep_seg['departure']['iataCode']
+            arrival_airport = arr_seg['arrival']['iataCode']
+            departure_time = dep_seg['departure']['at']
+            arrival_time = arr_seg['arrival']['at']
+            duration = flight['itineraries'][0]['duration']
+            price = flight['price']['total']
+            currency = flight['price']['currency']
+            stops = len(flight['itineraries'][0]['segments']) - 1
+            
+            flight_info = (
+                f"Flight {i}: {airline} {departure_airport}→{arrival_airport}, "
+                f"Departs: {departure_time}, Arrives: {arrival_time}, "
+                f"Duration: {duration}, Stops: {stops}, "
+                f"Price: {price} {currency}"
+            )
+            flight_details.append(flight_info)
 
-        prompt = "Summarize these flight options in a helpful way:\n" + "\n".join(flight_descriptions)
+        # Create prompt for Claude
+        prompt = f"""Please analyze these flight options and provide a helpful summary for a traveler:
 
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=150
+{chr(10).join(flight_details)}
+
+Please provide:
+1. The cheapest option
+2. The fastest/shortest duration option  
+3. The best overall value (considering price, duration, and convenience)
+4. Any notable patterns or recommendations
+
+Keep the summary concise and actionable for someone deciding which flight to book."""
+
+        # Call Claude API
+        response = claude_client.messages.create(
+            model="claude-3-haiku-20240307",  # Free tier friendly model
+            max_tokens=200,  # Keep it concise to save tokens
+            messages=[{
+                "role": "user",
+                "content": prompt
+            }]
         )
 
-        summary = response.choices[0].message.content
-        logging.info("AI summary generated successfully")
+        summary = response.content[0].text
+        logging.info("Claude AI summary generated successfully")
         return summary
 
-    except openai.RateLimitError:
-        logging.warning("OpenAI quota exceeded or rate limited, skipping AI summary.")
-        return "AI summary unavailable due to OpenAI quota limits."
+    except anthropic.RateLimitError:
+        logging.warning("Claude API rate limit exceeded, skipping AI summary.")
+        return "AI summary unavailable due to Claude API rate limits."
+    except anthropic.APIError as e:
+        logging.error(f"Claude API error: {e}")
+        return "AI summary failed due to API error."
     except Exception as e:
-        logging.error(f"OpenAI API error: {e}")
-        return "AI summary failed."
+        logging.error(f"Unexpected error in Claude summary: {e}")
+        return "AI summary failed due to unexpected error."
 
 def send_email(subject, html_body, recipient):
     try:
@@ -118,7 +153,7 @@ def run_job():
             send_email("Flight Search Results", "<p>No flights found.</p>", SEND_TO)
             return
 
-        summary = summarize_with_ai(all_flights)
+        summary = summarize_with_claude(all_flights)
         html_body = build_email_body(all_flights, departure_dates, return_dates, summary, ORIGIN, DESTINATION)
         send_email("Flight Search Results", html_body, SEND_TO)
 
